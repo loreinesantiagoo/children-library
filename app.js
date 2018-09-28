@@ -4,10 +4,12 @@ var express = require("express");
 var bodyParser = require("body-parser");
 var mysql = require("mysql");
 
+var sort = require('sort-by');
+var paginate = require('express-paginate');
+
 var app = express();
 
-const API_URI = "/api";
-
+app.use(paginate.middleware(10, 10));
 app.use(bodyParser.urlencoded({extended: false}));
 app.use(bodyParser.json());
 
@@ -22,8 +24,12 @@ var pool = mysql.createPool({
 })
 // console.log(pool);
 
-const findAllBooks = "SELECT id, title, cover_thumbnail, author_firstname, author_lastname FROM books LIMIT ? OFFSET ?";
-const findOneBook = "SELECT * FROM books WHERE id = ?";
+
+const findAllBooks = "SELECT id, author_firstname, author_lastname, title, cover_thumbnail FROM books LIMIT ? OFFSET ?";
+const findOneBook = "SELECT id, author_firstname, author_lastname, title, cover_thumbnail FROM books WHERE id = ?";
+const searchByAuthor = "SELECT  author_firstname, author_lastname FROM books WHERE author_firstname LIKE ? || author_lastname LIKE ?";
+const searchBookByTitle = "SELECT  title, cover_thumbnail FROM books WHERE title LIKE ?";
+const searchBooksByCriteria = "SELECT id, author_firstname, author_lastname, title, cover_thumbnail FROM books WHERE (title LIKE ?) || (author_firstname LIKE ?) || (author_lastname LIKE ?)";
 
 console.log("DB USER : " + process.env.DB_USER);
 console.log("DB NAME : " + process.env.DB_NAME);
@@ -57,10 +63,14 @@ var makeQuery = (sql, pool)=>{
     }
 }
 
-var findOne = makeQuery(findOneBook, pool);
-var findAll = makeQuery(findAllBooks, pool);
 
-app.get(API_URI + "/books", (req, res)=>{
+var findAll = makeQuery(findAllBooks, pool);
+var findOne = makeQuery(findOneBook, pool);
+var searchByName = makeQuery(searchByAuthor, pool);
+var searchByTitle = makeQuery(searchBookByTitle, pool);
+var searchBooks = makeQuery(searchBooksByCriteria, pool);
+
+app.get("/api/books", (req, res, next)=>{
     console.log("/books query !");
 
     var limit = parseInt(req.query.limit) || 10;
@@ -71,12 +81,12 @@ console.log(">>>" +offset +limit);
     let finalResult = [];
 
     results.forEach((element) => {
-        let value = { id: "", author_firstname: "", author_lastname: "" , title: "", cover_thumbnail:"" };
+        let value = { id: 0, author_firstname: "", author_lastname: "" , title: "", cover_thumbnail:"" };
         value.id = element.id;
         value.author_firstname = element.author_firstname;
         value.author_lastname = element.author_lastname;
         value.title = element.title;
-        
+        value.cover_thumbnail = element.cover_thumbnail;
         finalResult.push(value);
     })
     res.json(finalResult);
@@ -84,10 +94,46 @@ console.log(">>>" +offset +limit);
     .catch((error)=>{
         res.status(500).json(error);
     })
-   
+   console.log(">>>>3");
+    try {
+        const [ results, itemCount ] = await.Promise.all([
+            books.find({}).limit(req.query.limit).skip(req.skip).lean().exec(),
+            books.count({})
+        ]);
+        const pageCount = Math.ceil(itemCount / req.query.limit);
+
+        if (req.accepts('json')) {
+
+            res.json({
+                object: 'list',
+                has_more: paginate.hasNextPages(req)(pageCount),
+                data: results
+            });
+        } else {
+            res.render('books', {
+                books: results,
+                pageCount,
+                itemCount,
+                pages: paginate.getArrayPages(req)(3, pageCount, req.query.page)
+            });
+        }console.log("TRY");
+    } catch(err) { }
 })
 
-app.get(API_URI + "/books/search",(req, res) => {
+app.get("/api/books/:bookId", function (req, res) {
+     var id = req.params.bookId;
+     findOne([id])
+         .then(function (results) {
+             res.status(200).json(results);
+         })
+         .catch(function (err) {
+             res.status(500).end();
+             console.log(error);
+         });
+});
+
+
+app.get("/api/books/search",(req, res) => {
     console.log(req.query);
     var searchType = req.query.searchType;
     var keyword = req.query.keyword;
@@ -108,8 +154,10 @@ app.get(API_URI + "/books/search",(req, res) => {
         }
         else {
             console.log('search by author');
-            var authorName = keyword.split(' ');
+            var authorName = keyword.split(" ");
             if(!authorName[1]) authorName[1] = authorName[0];
+
+            console.log("authorName" + authorName);
             var firstname = "%" + authorName[0] + "%";
             var lastname = "%" + authorName[1] + "%";
                 searchByName([firstname, lastname])
@@ -126,7 +174,7 @@ app.get(API_URI + "/books/search",(req, res) => {
     else {
         console.log('search by both');
         var title = "%" + keyword + "%";
-        var authorName = keyword.split(' ');
+        var authorName = keyword.split(" ");
         if(!authorName[1]) authorName[1] = authorName[0];
         var firstname = "%" + authorName[0] + "%";
         var lastname = "%" + authorName[1] + "%";
@@ -145,7 +193,7 @@ app.get(API_URI + "/books/search",(req, res) => {
     }
 });
 
-app.use(express.static(__dirname + "/public"));
+app.use(express.static(__dirname + "thumbnails"));
 
 const PORT = parseInt(process.argv[2]) ||
     parseInt(process.env.APP_PORT) || 3000
