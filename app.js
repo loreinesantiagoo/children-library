@@ -3,11 +3,14 @@ require('dotenv').config();
 var express = require("express");
 var bodyParser = require("body-parser");
 var mysql = require("mysql");
+var cors = require('cors');
 
 var sort = require('sort-by');
 var paginate = require('express-paginate');
 
 var app = express();
+app.use(cors());
+
 
 app.use(paginate.middleware(10, 10));
 app.use(bodyParser.urlencoded({extended: false}));
@@ -25,11 +28,11 @@ var pool = mysql.createPool({
 // console.log(pool);
 
 
-const findAllBooks = "SELECT id, author_firstname, author_lastname, title, cover_thumbnail FROM books LIMIT ? OFFSET ?";
+const findAllBooks = "SELECT id,  cover_thumbnail, title, author_firstname, author_lastname FROM books ORDER BY id,  cover_thumbnail, title, author_firstname, author_lastname ASC LIMIT ? OFFSET ?";
 const findOneBook = "SELECT id, author_firstname, author_lastname, title, cover_thumbnail FROM books WHERE id = ?";
 const searchByAuthor = "SELECT  author_firstname, author_lastname FROM books WHERE author_firstname LIKE ? || author_lastname LIKE ?";
-const searchBookByTitle = "SELECT  title, cover_thumbnail FROM books WHERE title LIKE ?";
-const searchBooksByCriteria = "SELECT id, author_firstname, author_lastname, title, cover_thumbnail FROM books WHERE (title LIKE ?) || (author_firstname LIKE ?) || (author_lastname LIKE ?)";
+const searchBookByTitle = "SELECT  title FROM books WHERE title LIKE ?";
+const searchBooksByCriteria = "SELECT  author_firstname, author_lastname, title  FROM books WHERE (title LIKE ?) || (author_firstname LIKE ?) || (author_lastname LIKE ?)";
 
 console.log("DB USER : " + process.env.DB_USER);
 console.log("DB NAME : " + process.env.DB_NAME);
@@ -81,7 +84,7 @@ console.log(">>>" +offset +limit);
     let finalResult = [];
 
     results.forEach((element) => {
-        let value = { id: 0, author_firstname: "", author_lastname: "" , title: "", cover_thumbnail:"" };
+        let value = { id: 0, cover_thumbnail:"", author_firstname: "", author_lastname: "" , title: ""};
         value.id = element.id;
         value.author_firstname = element.author_firstname;
         value.author_lastname = element.author_lastname;
